@@ -180,21 +180,21 @@ class Player:
         For the bot, each decision should be composed of 5 parts: one for each raw, indicating the col in which
         setting the tile.
         """
-        for i_row in config.n_colors:
-            if i_row == self.left.state[i_row]:
+        for i_row in range(config.n_colors):
+            if i_row + 1 == self.left.state[i_row, 0]:
                 question = f"{self.prefix}Row {i_row}: Choose which col. to fill: "
                 i_col = get_input(question, int)
-
-                color = self.left.state[i_row + config.n_colors]
+                
+                color = self.left.state[i_row, 1]
                 if (self.right.state[i_row, i_col] == -1 and
                         color not in self.right.state[:, i_col]
                         and color not in self.right.state[i_row, :]):
-                    self.score = self.right.count_score(i_row, i_col, color)
+                    self.score += self.right.count_score(i_row, i_col, color)
                     self.right.state[i_row, i_col] = color
                 else:
-                    self.penalties += i_row
-                self.left.state[i_row] = 0
-                self.left.state[i_row + config.n_colors] = -1
+                    self.penalties.n += 1
+                self.left.state[i_row, 0] = 0
+                self.left.state[i_row, 1] = -1
 
         self.score -= self.penalties.get_score()
         self.penalties.n = 0
