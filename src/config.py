@@ -28,7 +28,7 @@ class Config:
         return self.n_plates
 
     def get_tile_retrieved(self, i_plate: int, i_color: int, game_state: np.ndarray) -> int:
-        start_index = (2 + self.n_plates) * self.n_colors
+        start_index = 2 * self.n_colors
         index = start_index + self.n_colors * i_plate + i_color
         return game_state[index]
 

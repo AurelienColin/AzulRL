@@ -12,21 +12,23 @@ class Left(Container):
     n_states = config.n_colors * 2
 
     @LazyProperty
-    def state(self) -> typing.List[np.ndarray]:
-        return [np.full((i, 2), -1) for i in range(1, 1 + config.n_colors)]
+    def state(self) -> np.ndarray:
+        state = np.zeros((config.n_colors, 2), dtype=int)
+        state[:, 1] = -1
+        return state
 
     def get_state(self) -> np.ndarray:
-        state = np.zeros(self.n_states)
+        state = np.zeros(self.n_states, dtype=int)
         for i in range(1, config.n_colors):
             state[i] = self.state[i][0]
-            state[i + self.n_colors] = self.state[i][1]
+            state[i + config.n_colors] = self.state[i, 1]
         return state
 
     def __repr__(self) -> str:
         description = "\n".join((
             f"Left part",
             *(
-                f"{self.state[i_row]}/{i_row} - {config.get_color(self.state[i_row + config.n_colors])}"
+                f"{self.state[i_row, 0]}/{i_row + 1} - {config.get_color(self.state[i_row, 1])}"
                 for i_row in range(config.n_colors)
             )
         ))
@@ -51,7 +53,7 @@ class Right(Container):
 
     @LazyProperty
     def state(self) -> np.ndarray:
-        return np.full((5, 5), -1)
+        return np.full((5, 5), -1, dtype=int)
 
     def get_column_score(self, i_row: int, i_col: int) -> int:
         col_score = 0
@@ -132,12 +134,12 @@ class Penalties:
 
     @property
     def state(self) -> np.ndarray:
-        return np.full(1, self.get_score())
+        return np.full(1, self.get_score(), dtype=int)
 
 
 @dataclass
 class Player:
-    index:int=0
+    index: int = 0
     score: int = 0
     is_first: bool = False
     _left: typing.Optional[Left] = None
@@ -163,7 +165,11 @@ class Player:
         return Right()
 
     def get_state(self):
-        return np.concatenate((self.left.state.flatten(), self.right.state.flatten()), self.penalties.state)
+        return np.concatenate((
+            self.left.state.flatten(),
+            self.right.state.flatten(),
+            self.penalties.state
+        ))
 
     @LazyProperty
     def penalties(self) -> Penalties:
@@ -177,7 +183,7 @@ class Player:
         for i_row in config.n_colors:
             if i_row == self.left.state[i_row]:
                 question = f"{self.prefix}Row {i_row}: Choose which col. to fill: "
-                i_col = get_input(question, lambda x: isinstance(x, int))
+                i_col = get_input(question, int)
 
                 color = self.left.state[i_row + config.n_colors]
                 if (self.right.state[i_row, i_col] == -1 and
@@ -207,17 +213,17 @@ class Player:
         n_tiles_retrieved = i_row = None
         while True:
             question = f"{self.prefix}Choose a plate: "
-            i_plate = get_input(question, lambda x: isinstance(x, int))
+            i_plate = get_input(question, int)
             i_plate = int(i_plate)
 
             question = f"{self.prefix}Choose a color index: "
-            i_color = get_input(question, lambda x: isinstance(x, int))
+            i_color = get_input(question, int)
             i_color = int(i_color)
 
             suffix = " (central part)" if i_plate == config.n_plates else ""
             print(f"{self.prefix}Plate #{i_plate}{suffix}, color: {i_color} ({config.colors[i_color]})")
 
-            confirmation = get_input(f"{prefix}Confirm? (y/n): ")
+            confirmation = get_input(f"{self.prefix}Confirm? (y/n): ")
             if confirmation.lower() != "y":
                 continue
 
@@ -227,16 +233,21 @@ class Player:
                       f"Don't try to cheat. Getting {config.taboo_penalty} penalties.")
                 self.score -= config.taboo_penalty
                 continue
+            print(f"Retrieved {n_tiles_retrieved} of color {config.get_color(i_color)}")
 
-            question = f"{prefix}Chose with line to put in (integer between 0 and {config.n_colors}): "
-            i_row = get_input(question, lambda x: isinstance(x, int))
-            i_row = int(i_row)
+            question = f"{self.prefix}Chose with line to put in (integer between 1 and {config.n_colors}): "
+            i_row = get_input(question, lambda x: int(x) - 1)
+            break
 
-        total = n_tiles_retrieved + self.left.state[i_row]
-        if total > i_row:  # Each row of the left part as the same number of places as its index.
-            self.penalties.n += (total - i_row)
-            total = i_row
-        self.left.state[i_row] = total
+        if self.left.state[i_row, 1] not in (-1, i_color):
+            self.penalties += n_tiles_retrieved
+        else:
+            total = n_tiles_retrieved + self.left.state[i_row, 0]
+            if total > i_row + 1:  # Each row of the left part as the same number of places as its index.
+                self.penalties.n += (total - i_row - 1)
+                total = i_row
+            self.left.state[i_row, 0] = total
+            self.left.state[i_row, 1] = i_color
         return i_plate, i_color, i_row
 
     def __repr__(self) -> str:
@@ -250,14 +261,14 @@ class Player:
         return description
 
 
-def get_input(question: str, condition: typing.Optional[typing.Callable[[str], bool]] = None) -> str:
+def get_input(question: str, f: typing.Optional[typing.Callable] = None):
     while True:
         action = input(question)
-        if condition is not None:
+        if f is not None:
             try:
-                assert condition(action)
-            except AssertionError:
-                print("AssertionError. Retry.")
+                action = f(action)
+            except ValueError:
+                print("ValueError. Retry.")
                 continue
         break
     return action

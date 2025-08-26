@@ -23,11 +23,11 @@ class Bag(Container):
         self.n_blues = graveyard.n_blues
         self.n_yellows = graveyard.n_yellows
 
-    def pick(self) -> int:
+    def pick(self, index:int) -> int:
         assert len(self) >= config.n_tile_per_plate, \
             f"Bag should contain at least {config.n_tile_per_plate} tiles but has {len(self)}"
 
-        plate = Plate()
+        plate = Plate(index=index)
         for i in range(config.n_tile_per_plate):
             index = np.random.randint(len(self))
             if index < self.n_blacks:
@@ -40,11 +40,14 @@ class Bag(Container):
                 plate.n_reds += 1
                 self.n_reds -= 1
             elif index < self.n_blacks + self.n_whites + self.n_reds + self.n_blues:
-                plate.n_reds += 1
-                self.n_reds -= 1
+                plate.n_blues += 1
+                self.n_blues -= 1
             elif index < self.n_blacks + self.n_whites + self.n_reds + self.n_blues + self.n_yellows:
                 plate.n_yellows += 1
                 self.n_yellows -= 1
             else:
                 raise ValueError(f"Index {index} out of bound (max = {len(self)})")
         return plate
+
+    def __repr__(self) -> str:
+        return super().__repr__()

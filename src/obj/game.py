@@ -46,7 +46,7 @@ class Game:
                 self.bag.fill(self.graveyard)
                 self.graveyard.empty()
 
-            plates[i] = self.bag.pick()
+            plates[i] = self.bag.pick(i)
         return plates
 
     @LazyProperty
@@ -72,6 +72,7 @@ class Game:
         player_index: int = 0
         while not end:
             player = self.players[player_index]
+            print(f"{player.index=}")
             if not start:
                 if not player.is_first:
                     continue
@@ -84,7 +85,7 @@ class Game:
 
             print(self)
             i_plate, i_color, i_row = player.choose(self.get_state())
-            if i_plate == len(config.n_colors):
+            if i_plate == config.n_plates:
                 self.central[i_color] = 0
                 if self.central.has_first_player_tile:
                     player.is_first = True
@@ -95,13 +96,14 @@ class Game:
                     if j_color != i_color:
                         self.central[j_color] += self.plates[i_plate][j_color]
                     self.plates[i_plate][j_color] = 0
+            player_index = (player_index + 1) % self.n_players
 
     def end_of_round(self) -> None:
         print(self)
         for player in self.players:
             player.end_of_round(self.get_state())
 
-    def get_state(self) -> None:
+    def get_state(self) -> np.ndarray:
         """
         The game state is composed of:
         - [0->n_colors]: the number of tiles in the bag for each color.
@@ -119,7 +121,7 @@ class Game:
         n_states = (3 + self.n_plates) * n_state_per_container + 1 + \
                    self.n_players * self.players[0].n_states
 
-        states = np.zeros(n_states)
+        states = np.zeros(n_states, dtype=int)
 
         index = 0
         for container in (self.bag, self.graveyard, *self.plates, self.central):
@@ -130,9 +132,10 @@ class Game:
         states[index] = int(self.central.has_first_player_tile)
         index += 1
 
-        for player in enumerate(self.players):
+        for player in self.players:
             states[index: index + player.n_states] = player.get_state()
             index += player.n_states
+        return states
 
     def run(self) -> None:
         while True:
@@ -140,13 +143,13 @@ class Game:
             self.end_of_round()
 
             if any(player.right.is_complete for player in self.players):
-                for player in players:
+                for player in self.players:
                     print(f"{player.prefix}score: {player.score} pts.")
 
     def __repr__(self) -> str:
         representation = "\n\n".join(
             (
-                '-'*20,
+                '-' * 20,
                 repr(self.bag),
                 repr(self.graveyard),
                 repr(self.central),
