@@ -7,7 +7,7 @@ import os
 class Config:
     n_tile_per_color: int = 20
     n_tile_per_plate: int = 4
-    taboo_penalty: int = 10
+    taboo_penalty: int = 1000
 
     colors: typing.Tuple[str, ...] = ('black', 'white', 'red', 'blue', 'yellow')
     n_colors: int = len(colors)

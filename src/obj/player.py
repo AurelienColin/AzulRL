@@ -55,19 +55,19 @@ class Right(Container):
     def state(self) -> np.ndarray:
         return np.full((5, 5), -1, dtype=int)
 
-    def get_column_score(self, i_row: int, i_col: int) -> int:
+    def get_row_score(self, i_row: int, i_col: int) -> int:
         col_score = 0
 
         for before in range(1, config.n_colors - 1):
             j_col = i_col - before
-            if j_col >= 0 and self.state[i_row, j_col] == -1:
+            if j_col >= 0 and self.state[i_row, j_col] != -1:
                 col_score += 1
             else:
                 break
 
         for after in range(1, config.n_colors):
             j_col = i_col + after
-            if j_col < config.n_colors and self.state[i_row, j_col] == -1:
+            if j_col < config.n_colors and self.state[i_row, j_col] != -1:
                 col_score += 1
             else:
                 break
@@ -76,23 +76,23 @@ class Right(Container):
             col_score += 1
 
         if col_score == 5:
-            col_score += config.complete_column_score
+            col_score += config.complete_row_score
             self.is_complete = True
         return col_score
 
-    def get_row_score(self, i_row: int, i_col: int) -> int:
+    def get_column_score(self, i_row: int, i_col: int) -> int:
         row_score = 0
 
         for before in range(1, config.n_colors - 1):
             j_row = i_row - before
-            if i_col >= 0 and self.state[j_row, i_col] == -1:
+            if i_col >= 0 and self.state[j_row, i_col] != -1:
                 row_score += 1
             else:
                 break
 
         for after in range(1, config.n_colors):
             j_row = i_row + after
-            if j_row < config.n_colors and self.state[j_row, i_col] == -1:
+            if j_row < config.n_colors and self.state[j_row, i_col] != -1:
                 row_score += 1
             else:
                 break
@@ -101,11 +101,11 @@ class Right(Container):
             row_score += 1
 
         if row_score == 5:
-            row_score += config.complete_row_score
+            row_score += config.complete_col_score
         return row_score
 
     def get_color_score(self, color: int) -> int:
-        if len(self.state == color) == config.n_colors:
+        if len(self.state[self.state == color]) == config.n_colors:
             color_score = config.complete_color_score
         else:
             color_score = 0
@@ -114,8 +114,14 @@ class Right(Container):
     def count_score(self, i_row: int, i_col: int, color: int) -> int:
         column_score = self.get_column_score(i_row, i_col)
         row_score = self.get_row_score(i_row, i_col)
+        score = int(not column_score and not row_score)
+
         color_score = self.get_color_score(color)
-        return color_score + row_score + column_score
+        if row_score or column_score:
+            print(self)
+            print(f"{i_row=}, {i_col=}, {color=}")
+            print(f"{score=} + {column_score=}, {row_score=}, {color_score=}")
+        return score + color_score + row_score + column_score
 
 
 @dataclass
@@ -254,7 +260,7 @@ class Player:
             total = n_tiles_retrieved + self.left.state[i_row, 0]
             if total > i_row + 1:  # Each row of the left part as the same number of places as its index.
                 self.penalties.n += int(total - i_row - 1)
-                total = i_row
+                total = i_row + 1
             self.left.state[i_row, 0] = total
             self.left.state[i_row, 1] = i_color
         return i_plate, i_color, i_row

@@ -11,21 +11,24 @@ from functools import cache
 from rignak.src.lazy_property import LazyProperty
 import os
 
+
 @cache
 def build_choose_model(input_length: int, n_plates: int) -> tf.keras.Model:
     input_layer = tf.keras.layers.Input(shape=(input_length,), dtype=tf.float32)
 
-    current = tf.keras.layers.Dense(64, activation='relu')(input_layer)
-    current = tf.keras.layers.Dense(32, activation='relu')(current)
-    current = tf.keras.layers.Dense(32, activation='relu')(current)
+    current = tf.keras.layers.Dense(32, activation='relu')(input_layer)
+    current = tf.keras.layers.Dense(16, activation='relu')(current)
+    current = tf.keras.layers.Dense(16, activation='relu')(current)
 
     plate_head = tf.keras.layers.Dense(n_plates + 1, name='plate')(current)
 
     current = tf.keras.layers.concatenate((plate_head, current))
-    current = tf.keras.layers.Dense(16, activation='relu')(current)
+    current = tf.keras.layers.Dense(8, activation='relu')(current)
+    current = tf.keras.layers.Dense(8, activation='relu')(current)
     color_head = tf.keras.layers.Dense(config.n_colors, name='color')(current)
 
     current = tf.keras.layers.concatenate((color_head, current))
+    current = tf.keras.layers.Dense(8, activation='relu')(current)
     current = tf.keras.layers.Dense(8, activation='relu')(current)
     row_head = tf.keras.layers.Dense(config.n_colors, name='row')(current)
 
@@ -41,8 +44,8 @@ def build_choose_model(input_length: int, n_plates: int) -> tf.keras.Model:
 def build_end_of_round_model(input_length: int) -> tf.keras.Model:
     input_layer = tf.keras.layers.Input(shape=(input_length,), dtype=tf.float32)
 
-    current = tf.keras.layers.Dense(64, activation='relu')(input_layer)
-    current = tf.keras.layers.Dense(32, activation='relu')(current)
+    current = tf.keras.layers.Dense(32, activation='relu')(input_layer)
+    current = tf.keras.layers.Dense(16, activation='relu')(current)
 
     output_heads = []
     for i in range(config.n_colors):
@@ -73,18 +76,20 @@ class BotPlayer(Player):
     def end_of_round_model(self) -> tf.keras.models.Model:
         return build_end_of_round_model(self.input_length)
 
-    def internal_choice(self, game_state: np.ndarray)-> typing.Tuple[int, int, int, int]:
+    def internal_choice(self, game_state: np.ndarray) -> typing.Tuple[int, int, int, int]:
         if random.random() < self.exploration:
             i_plate = random.randint(0, self.n_plates)
             i_color = random.randint(0, config.n_colors - 1)
             i_row = random.randint(0, config.n_colors - 1)
+            # print(f"Random choice: {i_plate=}, {i_color=}, {i_row=}")
         else:
             reshaped_state = tf.convert_to_tensor(np.expand_dims(game_state, axis=0), dtype=tf.float32)
             plate_scores, color_scores, row_scores = self.choose_model(reshaped_state)
 
-            i_plate = tf.math.argmax(plate_scores)[0]
-            i_color = tf.math.argmax(color_scores)[0]
-            i_row = tf.math.argmax(row_scores)[0]
+            i_plate = tf.math.argmax(plate_scores[0]).numpy()
+            i_color = tf.math.argmax(color_scores[0]).numpy()
+            i_row = tf.math.argmax(row_scores[0]).numpy()
+            # print(f"RL choice: {i_plate=}, {i_color=}, {i_row=}")
 
         n_tiles_retrieved = config.get_tile_retrieved(i_plate, i_color, game_state)
         if n_tiles_retrieved == 0:
@@ -94,14 +99,18 @@ class BotPlayer(Player):
 
     def end_of_round(self, game_state: np.ndarray) -> None:
         reshaped_state = tf.convert_to_tensor(np.expand_dims(game_state, axis=0), dtype=tf.float32)
-        col_probs_list = self.end_of_round_model(reshaped_state)
+        estimated_scores = self.end_of_round_model(reshaped_state)
 
         choices = []
-        for i_row in range(config.n_colors):
+        print(f"{self.prefix} - BEFORE EOR:\n{self.penalties.n=}\n{self.left}\n{self.right}")
+        for i_row, col_scores in enumerate(estimated_scores):
+            col_scores = col_scores[0]
             if i_row + 1 == self.left.state[i_row, 0]:
-                col_probs = col_probs_list[i_row]
-                i_col_tensor = tf.random.categorical(tf.math.log(col_probs), 1)[0][0]
-                i_col = i_col_tensor.numpy()
+                if random.random() < self.exploration:
+                    i_col = random.randint(0, config.n_colors - 1)
+                else:
+                    i_col = tf.math.argmax(col_scores).numpy()
+
                 choices.append(i_col)
 
                 color = self.left.state[i_row, 1]
@@ -116,6 +125,7 @@ class BotPlayer(Player):
                 self.left.state[i_row, 1] = -1
             else:
                 choices.append(-1)
+        print(f"{self.prefix} - AFTER EOR:\n{self.penalties.n=}\n{self.left}\n{self.right}")
 
         self.score -= self.penalties.get_score()
         return choices

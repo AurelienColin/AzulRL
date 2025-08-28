@@ -9,7 +9,7 @@ from src.obj.bag import Bag
 from rignak.src.lazy_property import LazyProperty
 from src.obj.container import Container
 from src.obj.central import Central
-
+import sys
 
 @dataclass
 class Game:
@@ -40,13 +40,16 @@ class Game:
         plates = [Plate(index=i) for i in range(self.n_plates)]
         for i, plate in enumerate(plates):
             if len(self.bag) < config.n_tile_per_plate:
-                if len(self.graveyard) < config.n_tile_per_plate:
-                    break
-
-                self.bag.fill(self.graveyard)
+                self._bag = Bag()
+                # if len(self.graveyard) < config.n_tile_per_plate:
+                #     break
+                #
+                # self.bag.fill(self.graveyard)
+                # print(f"Atfter filling the bag: {len(self.bag)=}")
                 self.graveyard.empty()
 
             plates[i] = self.bag.pick(i)
+        self.central.has_first_player_tile = True
         return plates
 
     @LazyProperty
@@ -70,15 +73,28 @@ class Game:
         self._plates = self.get_plates()
 
         start = False
-        end = False
 
         player_index: int = 0
-        while not end:
+
+        ns = [len(plate) for plate in (*self.plates, self.central)]
+        print(f"{ns}")
+        if sum(ns) == 0:
+            sys.exit()
+
+        for player in self.players:
+            player.penalties.n = 0
+
+        table_turn = 0
+        while True:
             if all(not len(plate) for plate in (*self.plates, self.central)):
+                print(f"Empty plates.")
                 break
 
             player = self.players[player_index]
             if not start:
+                if not any((player.is_first for player in self.players)):
+                    sys.exit()
+
                 if not player.is_first:
                     player_index = (player_index + 1) % self.n_players
                     continue
