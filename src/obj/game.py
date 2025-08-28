@@ -22,7 +22,7 @@ class Game:
     _players: typing.Optional[typing.List[Player]] = None
 
     def __post_init__(self):
-        print(f"Playing with {self.n_players} players and {self.n_plates} plates.")
+        self._plates = self.get_plates()
 
     @property
     def n_plates(self) -> int:
@@ -63,7 +63,10 @@ class Game:
         players[0].is_first = True
         return players
 
-    def round(self):
+    def round(self, printing=True):
+        choices = [[] for _ in range(self.n_players)]
+        states = [[] for _ in range(self.n_players)]
+
         self._plates = self.get_plates()
 
         start = False
@@ -71,20 +74,27 @@ class Game:
 
         player_index: int = 0
         while not end:
+            if all(not len(plate) for plate in (*self.plates, self.central)):
+                break
+
             player = self.players[player_index]
-            print(f"{player.index=}")
             if not start:
                 if not player.is_first:
+                    player_index = (player_index + 1) % self.n_players
                     continue
                 else:
                     start = True
                     player.is_first = False
 
-            if all(not len(plate) for plate in self.plates):
-                return
+            if printing:
+                print(self)
+            state = self.get_state()
+            i_plate, i_color, i_row = player.choose(state)
+            if printing:
+                print(f"Player {player.index} choose plate {i_plate}, color {i_color} and put it in row {i_row}")
+            choices[player_index].append((i_plate, i_color, i_row))
+            states[player_index].append(state)
 
-            print(self)
-            i_plate, i_color, i_row = player.choose(self.get_state())
             if i_plate == config.n_plates:
                 self.central[i_color] = 0
                 if self.central.has_first_player_tile:
@@ -97,11 +107,23 @@ class Game:
                         self.central[j_color] += self.plates[i_plate][j_color]
                     self.plates[i_plate][j_color] = 0
             player_index = (player_index + 1) % self.n_players
+        return choices, states
 
-    def end_of_round(self) -> None:
-        print(self)
-        for player in self.players:
-            player.end_of_round(self.get_state())
+    def has_ended(self) -> bool:
+        return any(player.right.is_complete for player in self.players)
+
+    def end_of_round(self, printing=True):
+        if printing:
+            print(self)
+
+        choices = []
+        states = []
+        for i, player in enumerate(self.players):
+            state = self.get_state()
+            choice = player.end_of_round(state)
+            choices.append(choice)
+            states.append(state)
+        return choices, states
 
     def get_state(self) -> np.ndarray:
         """
@@ -142,7 +164,7 @@ class Game:
             self.round()
             self.end_of_round()
 
-            if any(player.right.is_complete for player in self.players):
+            if self.has_ended():
                 for player in self.players:
                     print(f"{player.prefix}score: {player.score} pts.")
 

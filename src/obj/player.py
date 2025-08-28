@@ -105,7 +105,7 @@ class Right(Container):
         return row_score
 
     def get_color_score(self, color: int) -> int:
-        if (self.state == color) == config.n_colors:
+        if len(self.state == color) == config.n_colors:
             color_score = config.complete_color_score
         else:
             color_score = 0
@@ -120,7 +120,7 @@ class Right(Container):
 
 @dataclass
 class Penalties:
-    n = 0
+    n: int = 0
 
     def get_score(self) -> int:
         score = 0
@@ -175,16 +175,18 @@ class Player:
     def penalties(self) -> Penalties:
         return Penalties()
 
-    def end_of_round(self, game_state: np.ndarray) -> None:
+    def end_of_round(self, game_state: np.ndarray):
         """
         For the bot, each decision should be composed of 5 parts: one for each raw, indicating the col in which
         setting the tile.
         """
+        choices = []
         for i_row in range(config.n_colors):
             if i_row + 1 == self.left.state[i_row, 0]:
                 question = f"{self.prefix}Row {i_row}: Choose which col. to fill: "
                 i_col = get_input(question, int)
-                
+                choices.append(i_col)
+
                 color = self.left.state[i_row, 1]
                 if (self.right.state[i_row, i_col] == -1 and
                         color not in self.right.state[:, i_col]
@@ -195,21 +197,18 @@ class Player:
                     self.penalties.n += 1
                 self.left.state[i_row, 0] = 0
                 self.left.state[i_row, 1] = -1
+            else:
+                choices.append(-1)
 
         self.score -= self.penalties.get_score()
         self.penalties.n = 0
+        return choices
 
     @property
     def prefix(self) -> str:
         return f"Player {self.index} - "
 
-    def choose(self, game_state: np.ndarray) -> typing.Tuple[int, int, int]:
-        """
-        For the bot, each decision should be composed of three parts:
-        - the index of the plate into which we take tiles;
-        - the index of the color we choose;
-        - the index of the row of the Left container into which we put the tile.
-        """
+    def internal_choice(self, game_state: np.ndarray) -> typing.Tuple[int, int, int, int]:
         n_tiles_retrieved = i_row = None
         while True:
             question = f"{self.prefix}Choose a plate: "
@@ -238,13 +237,23 @@ class Player:
             question = f"{self.prefix}Chose with line to put in (integer between 1 and {config.n_colors}): "
             i_row = get_input(question, lambda x: int(x) - 1)
             break
+        return i_plate, i_color, i_row, n_tiles_retrieved
+
+    def choose(self, game_state: np.ndarray) -> typing.Tuple[int, int, int]:
+        """
+        For the bot, each decision should be composed of three parts:
+        - the index of the plate into which we take tiles;
+        - the index of the color we choose;
+        - the index of the row of the Left container into which we put the tile.
+        """
+        i_plate, i_color, i_row, n_tiles_retrieved = self.internal_choice(game_state)
 
         if self.left.state[i_row, 1] not in (-1, i_color):
-            self.penalties += n_tiles_retrieved
-        else:
+            self.penalties.n += int(n_tiles_retrieved)
+        elif n_tiles_retrieved:
             total = n_tiles_retrieved + self.left.state[i_row, 0]
             if total > i_row + 1:  # Each row of the left part as the same number of places as its index.
-                self.penalties.n += (total - i_row - 1)
+                self.penalties.n += int(total - i_row - 1)
                 total = i_row
             self.left.state[i_row, 0] = total
             self.left.state[i_row, 1] = i_color

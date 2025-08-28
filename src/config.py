@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import typing
 import numpy as np
-
+import os
 
 @dataclass
 class Config:
@@ -17,6 +17,15 @@ class Config:
     complete_column_score = 7
     complete_row_score = 2
     complete_color_score = 10
+
+    weights_dir = 'res/models/'
+    model_weights_path_1 = os.path.join(weights_dir, 'model_weights_1.h5')
+    model_weights_path_2 = os.path.join(weights_dir, 'model_weights_2.h5')
+    history_path =  os.path.join(weights_dir, 'history.png')
+
+    def __post_init__(self):
+        os.makedirs(self.weights_dir, exist_ok=True)
+
 
     def get_plate_number(self, n_players: int):
         if n_players == 3:
