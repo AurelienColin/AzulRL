@@ -11,9 +11,11 @@ from src.obj.container import Container
 from src.obj.central import Central
 import sys
 
+
 @dataclass
 class Game:
     n_players: int = 4
+    player_index: int = 0
 
     _bag: typing.Optional[Bag] = None
     _plates: typing.Optional[typing.List[Plate]] = None
@@ -74,8 +76,6 @@ class Game:
 
         start = False
 
-        player_index: int = 0
-
         ns = [len(plate) for plate in (*self.plates, self.central)]
         print(f"{ns}")
         if sum(ns) == 0:
@@ -90,13 +90,13 @@ class Game:
                 print(f"Empty plates.")
                 break
 
-            player = self.players[player_index]
+            player = self.players[self.player_index]
             if not start:
                 if not any((player.is_first for player in self.players)):
                     sys.exit()
 
                 if not player.is_first:
-                    player_index = (player_index + 1) % self.n_players
+                    self.player_index = (self.player_index + 1) % self.n_players
                     continue
                 else:
                     start = True
@@ -108,8 +108,8 @@ class Game:
             i_plate, i_color, i_row = player.choose(state)
             if printing:
                 print(f"Player {player.index} choose plate {i_plate}, color {i_color} and put it in row {i_row}")
-            choices[player_index].append((i_plate, i_color, i_row))
-            states[player_index].append(state)
+            choices[self.player_index].append((i_plate, i_color, i_row))
+            states[self.player_index].append(state)
 
             if i_plate == config.n_plates:
                 self.central[i_color] = 0
@@ -122,7 +122,7 @@ class Game:
                     if j_color != i_color:
                         self.central[j_color] += self.plates[i_plate][j_color]
                     self.plates[i_plate][j_color] = 0
-            player_index = (player_index + 1) % self.n_players
+            self.player_index = (self.player_index + 1) % self.n_players
         return choices, states
 
     def has_ended(self) -> bool:
@@ -141,6 +141,11 @@ class Game:
             states.append(state)
         return choices, states
 
+    @property
+    def n_states(self) -> int:
+        return (3 + self.n_plates) * config.n_colors + 1 + \
+            self.n_players * self.players[0].n_states + self.n_players
+
     def get_state(self) -> np.ndarray:
         """
         The game state is composed of:
@@ -154,12 +159,9 @@ class Game:
             [... + n_colors -> ... + 2*n_colors]: The color of the tile in each row of the left panel.
             [... + 2*n_colors -> ... + 2*n_colors + n_colors**2]: The color of the tile in each tile of the right panel.
             [... + 2*n_colors + n_colors**2]: The number of penalties.
+        - [-self.n_players:] : Hot encoded player index.
         """
-        n_state_per_container = config.n_colors
-        n_states = (3 + self.n_plates) * n_state_per_container + 1 + \
-                   self.n_players * self.players[0].n_states
-
-        states = np.zeros(n_states, dtype=int)
+        states = np.zeros(self.n_states, dtype=int)
 
         index = 0
         for container in (self.bag, self.graveyard, *self.plates, self.central):
@@ -173,6 +175,9 @@ class Game:
         for player in self.players:
             states[index: index + player.n_states] = player.get_state()
             index += player.n_states
+
+        states[-self.n_players:] = 0
+        states[- self.player_index] = 1
         return states
 
     def run(self) -> None:

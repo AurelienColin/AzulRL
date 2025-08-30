@@ -12,11 +12,11 @@ from src.utils import to_hot_encoded
 from rignak.src.custom_display import Display
 
 
-def masked_mse(y_true: tf.Tensor, y_pred: tf.Tensor, espilon: float = 1E-8) -> tf.Tensor:
+def masked_mae(y_true: tf.Tensor, y_pred: tf.Tensor, espilon: float = 1E-8) -> tf.Tensor:
     mask = tf.cast(tf.not_equal(y_true, 0), dtype=tf.float32) + espilon
-    squared_error = tf.square(y_true - y_pred)
+    squared_error = tf.abs(y_true - y_pred)
     masked_squared_error = squared_error * mask
-    return tf.reduce_sum(masked_squared_error) / tf.reduce_sum(mask)
+    return masked_squared_error
 
 
 def train_on_round(
@@ -55,19 +55,21 @@ def train_on_round(
         for j in range(len(choices_2)):
             rewards_2[j] = np.concatenate(rewards_2[j])
 
-        states_1 = np.concatenate(states_1)
-        states_2 = np.array(states_2)
+        start_index = game.players[0].start_input_index
+        states_1 = np.concatenate(states_1)[:, start_index:]
+        states_2 = np.array(states_2)[:, start_index:]
 
         logger(f"Train with {states_1.shape[0]} samples.")
+        loss1 = loss2 = None
         if states_1.shape[0]:
-            model_1.train_on_batch(states_1, rewards_1)
-            model_2.train_on_batch(states_2, rewards_2)
-    return after_score, rewards_1[0].shape[0]
+            loss1 = np.mean(model_1.train_on_batch(states_1, rewards_1))
+            loss2 = np.mean(model_2.train_on_batch(states_2, rewards_2))
+    return after_score, rewards_1[0].shape[0], loss1, loss2
 
 
 def train(
         n_games: int = 1000,
-        learning_rate: float = 0.01,
+        learning_rate: float = 0.1,
         plot_every: int = 1,
         n_players: int = 4
 ) -> None:
@@ -77,6 +79,7 @@ def train(
     player_kwargs = {
         "n_plates": dummy_game.n_plates,
         "input_length": len(dummy_game.get_state()),
+        "start_input_index": 2 * config.n_colors
     }
 
     # Create models and optimizers
@@ -87,13 +90,14 @@ def train(
     model_1.summary()
     model_2.summary()
 
-    model_1.compile(loss=masked_mse, optimizer=tf.keras.optimizers.AdamW(learning_rate=learning_rate))
-    model_2.compile(loss=masked_mse, optimizer=tf.keras.optimizers.AdamW(learning_rate=learning_rate))
+    model_1.compile(loss=masked_mae, optimizer=tf.keras.optimizers.AdamW(learning_rate=learning_rate))
+    model_2.compile(loss=masked_mae, optimizer=tf.keras.optimizers.AdamW(learning_rate=learning_rate))
 
     scores = []
-    mean_scores = []
     n_turns = []
     n_rounds = []
+    losses1 = []
+    losses2 = []
 
     for game_index in range(n_games):
         logger(f"Starting game_index {game_index + 1}/{n_games}")
@@ -104,9 +108,13 @@ def train(
             game.players[i] = BotPlayer(index=i, **player_kwargs)
         game.players[0].is_first = True
 
+        total_loss1 = 0
+        total_loss2 = 0
         while True:
             i_round += 1
-            after_score, round_turns = train_on_round(game, model_1, model_2)
+            after_score, round_turns, loss1, loss2 = train_on_round(game, model_1, model_2)
+            total_loss1 += loss1
+            total_loss2 += loss2
             i_turn += round_turns
             if game.has_ended():
                 break
@@ -117,9 +125,11 @@ def train(
         scores.append(np.nanmean(after_score))
         n_turns.append(i_turn)
         n_rounds.append(i_round)
+        losses1.append(total_loss1)
+        losses2.append(total_loss1)
 
         if game_index % plot_every == 0 and game_index > 0:
-            plot_history(scores, n_turns, n_rounds)
+            plot_history(scores, n_turns, n_rounds, losses1, losses2)
 
     # Save weights
     logger("Saving model weights...")
@@ -127,14 +137,22 @@ def train(
     model_2.save_weights(config.model_weights_path_2)
 
 
-def plot_history(mean_scores: typing.List, n_turns: typing.List, n_rounds: typing.List) -> None:
-    display = Display(ncols=3, suptitle=f"History after {len(mean_scores)} games.")
+def plot_history(
+        mean_scores: typing.List,
+        n_turns: typing.List,
+        n_rounds: typing.List,
+        losses1: typing.List,
+        losses2: typing.List
+) -> None:
+    display = Display(ncols=5, suptitle=f"History after {len(mean_scores)} games.")
 
     kwargs = dict(xlabel="Game index")
     x = range(len(mean_scores))
     display[0].plot(x, mean_scores, ylabel="Score", title="Mean score after the game.", **kwargs)
     display[1].plot(x, n_turns, ylabel="n", title="Number of player turns.", **kwargs)
     display[2].plot(x, n_rounds, ylabel="n", title="Number of game rounds.", **kwargs)
+    display[3].plot(x, losses1, ylabel="Score", title="In-turn loss", **kwargs)
+    display[4].plot(x, losses2, ylabel="Score", title="End-turn loss", **kwargs)
     display.show(export_filename=config.history_path)
 
 

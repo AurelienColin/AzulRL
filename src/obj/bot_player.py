@@ -16,19 +16,16 @@ import os
 def build_choose_model(input_length: int, n_plates: int) -> tf.keras.Model:
     input_layer = tf.keras.layers.Input(shape=(input_length,), dtype=tf.float32)
 
-    current = tf.keras.layers.Dense(32, activation='relu')(input_layer)
-    current = tf.keras.layers.Dense(16, activation='relu')(current)
-    current = tf.keras.layers.Dense(16, activation='relu')(current)
+    current = tf.keras.layers.Dense(64, activation='relu')(input_layer)
+    current = tf.keras.layers.Dense(32, activation='relu')(current)
 
     plate_head = tf.keras.layers.Dense(n_plates + 1, name='plate')(current)
 
     current = tf.keras.layers.concatenate((plate_head, current))
-    current = tf.keras.layers.Dense(8, activation='relu')(current)
-    current = tf.keras.layers.Dense(8, activation='relu')(current)
+    current = tf.keras.layers.Dense(16, activation='relu')(current)
     color_head = tf.keras.layers.Dense(config.n_colors, name='color')(current)
 
     current = tf.keras.layers.concatenate((color_head, current))
-    current = tf.keras.layers.Dense(8, activation='relu')(current)
     current = tf.keras.layers.Dense(8, activation='relu')(current)
     row_head = tf.keras.layers.Dense(config.n_colors, name='row')(current)
 
@@ -62,6 +59,7 @@ def build_end_of_round_model(input_length: int) -> tf.keras.Model:
 class BotPlayer(Player):
     n_plates: int = 0
     input_length: int = 0
+    start_input_index: int = 0
 
     exploration = 0.1
 
@@ -70,11 +68,11 @@ class BotPlayer(Player):
 
     @LazyProperty
     def choose_model(self) -> tf.keras.models.Model:
-        return build_choose_model(self.input_length, self.n_plates)
+        return build_choose_model(self.input_length - self.start_input_index, self.n_plates)
 
     @LazyProperty
     def end_of_round_model(self) -> tf.keras.models.Model:
-        return build_end_of_round_model(self.input_length)
+        return build_end_of_round_model(self.input_length - self.start_input_index)
 
     def internal_choice(self, game_state: np.ndarray) -> typing.Tuple[int, int, int, int]:
         if random.random() < self.exploration:
@@ -83,7 +81,8 @@ class BotPlayer(Player):
             i_row = random.randint(0, config.n_colors - 1)
             # print(f"Random choice: {i_plate=}, {i_color=}, {i_row=}")
         else:
-            reshaped_state = tf.convert_to_tensor(np.expand_dims(game_state, axis=0), dtype=tf.float32)
+            short_game_state=game_state[self.start_input_index:]
+            reshaped_state = tf.convert_to_tensor(np.expand_dims(short_game_state, axis=0), dtype=tf.float32)
             plate_scores, color_scores, row_scores = self.choose_model(reshaped_state)
 
             i_plate = tf.math.argmax(plate_scores[0]).numpy()
@@ -98,7 +97,8 @@ class BotPlayer(Player):
         return i_plate, i_color, i_row, n_tiles_retrieved
 
     def end_of_round(self, game_state: np.ndarray) -> None:
-        reshaped_state = tf.convert_to_tensor(np.expand_dims(game_state, axis=0), dtype=tf.float32)
+        short_game_state=game_state[self.start_input_index:]
+        reshaped_state = tf.convert_to_tensor(np.expand_dims(short_game_state, axis=0), dtype=tf.float32)
         estimated_scores = self.end_of_round_model(reshaped_state)
 
         choices = []
