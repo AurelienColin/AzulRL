@@ -57,9 +57,14 @@ optimizer = AdamW(learning_rate=lr_schedule)
 **Action**: Linear warmup for first N steps
 
 ## Acceptance Criteria
-- [ ] Learning rate decreases over training
-- [ ] Training remains stable (no loss explosions)
-- [ ] Final LR reaches configured minimum
+- [x] Learning rate decreases over training
+- [x] Training remains stable (no loss explosions)
+- [x] Final LR reaches configured minimum
+
+## Implementation Notes (2025-12-14)
+- Implemented `WarmupCosineDecay` class in `run_rl.py:16-78`
+- Added LR schedule parameters to `config.py:24-28`
+- LR is logged and visualized in training history plot
 
 ## Dependencies
 - Phase 1 tasks should be complete first
