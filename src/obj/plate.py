@@ -1,9 +1,15 @@
+"""Plate container for Azul game tiles."""
 from dataclasses import dataclass
-import typing
 from src.obj.container import Container
+
 
 @dataclass
 class Plate(Container):
+    """Factory plate that holds tiles to be selected by players.
+
+    Each plate initially receives tiles from the bag at the start of a round.
+    When a player selects tiles from a plate, remaining tiles go to the central.
+    """
     def __post_init__(self):
         self.displayed_name = f"Plate {self.index}"
 

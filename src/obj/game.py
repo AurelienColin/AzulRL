@@ -1,3 +1,4 @@
+"""Game controller for Azul board game."""
 from dataclasses import dataclass
 import typing
 import numpy as np
@@ -9,11 +10,16 @@ from src.obj.bag import Bag
 from rignak.src.lazy_property import LazyProperty
 from src.obj.container import Container
 from src.obj.central import Central
-import sys
 
 
 @dataclass
 class Game:
+    """Main game controller managing state, players, and turn flow.
+
+    Handles the complete game loop: plate setup, player turns, tile selection,
+    scoring, and end-of-round processing. Supports 3-4 players.
+    """
+
     n_players: int = 4
     player_index: int = 0
 
@@ -39,6 +45,11 @@ class Game:
         raise ValueError(f"`get_plates` should have been called before accessing self.plates.")
 
     def get_plates(self) -> typing.List[Plate]:
+        """Create and fill factory plates from the bag for a new round.
+
+        Returns:
+            List of Plate objects filled with randomly drawn tiles.
+        """
         plates = [Plate(index=i) for i in range(self.n_plates)]
         for i, plate in enumerate(plates):
             if len(self.bag) < config.n_tile_per_plate:
@@ -68,7 +79,18 @@ class Game:
         players[0].is_first = True
         return players
 
-    def round(self, printing=True):
+    def round(self, printing: bool = True) -> typing.Tuple[typing.List, typing.List]:
+        """Execute one complete round of tile selection.
+
+        Args:
+            printing: Whether to print game state during the round.
+
+        Returns:
+            Tuple of (choices, states) where each is a list per player.
+
+        Raises:
+            RuntimeError: If no tiles available or no first player marked.
+        """
         choices = [[] for _ in range(self.n_players)]
         states = [[] for _ in range(self.n_players)]
 
@@ -77,9 +99,8 @@ class Game:
         start = False
 
         ns = [len(plate) for plate in (*self.plates, self.central)]
-        print(f"{ns}")
         if sum(ns) == 0:
-            sys.exit()
+            raise RuntimeError("No tiles available at round start")
 
         for player in self.players:
             player.penalties.n = 0
@@ -87,13 +108,12 @@ class Game:
         table_turn = 0
         while True:
             if all(not len(plate) for plate in (*self.plates, self.central)):
-                print(f"Empty plates.")
                 break
 
             player = self.players[self.player_index]
             if not start:
                 if not any((player.is_first for player in self.players)):
-                    sys.exit()
+                    raise RuntimeError("No player marked as first player")
 
                 if not player.is_first:
                     self.player_index = (self.player_index + 1) % self.n_players
@@ -126,9 +146,22 @@ class Game:
         return choices, states
 
     def has_ended(self) -> bool:
+        """Check if the game has ended (any player completed a row).
+
+        Returns:
+            True if any player has a complete row on their right panel.
+        """
         return any(player.right.is_complete for player in self.players)
 
-    def end_of_round(self, printing=True):
+    def end_of_round(self, printing: bool = True) -> typing.Tuple[typing.List, typing.List]:
+        """Process end-of-round scoring for all players.
+
+        Args:
+            printing: Whether to print game state.
+
+        Returns:
+            Tuple of (choices, states) for tile placement decisions.
+        """
         if printing:
             print(self)
 
@@ -181,6 +214,7 @@ class Game:
         return states
 
     def run(self) -> None:
+        """Run the complete game loop until a player completes a row."""
         while True:
             self.round()
             self.end_of_round()

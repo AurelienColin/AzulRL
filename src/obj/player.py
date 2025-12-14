@@ -1,3 +1,4 @@
+"""Player classes and components for Azul game."""
 from dataclasses import dataclass
 import typing
 import numpy as np
@@ -8,13 +9,18 @@ from src.config import config
 
 @dataclass
 class Left(Container):
+    """Left panel of player board where tiles are staged before scoring.
+
+    Each row can hold 1-5 tiles of a single color. When a row is filled,
+    one tile moves to the right panel for scoring at end of round.
+    """
     _state: typing.Optional[typing.List[np.ndarray]] = None
     n_states = config.n_colors * 2
 
     @LazyProperty
     def state(self) -> np.ndarray:
         state = np.zeros((config.n_colors, 2), dtype=int)
-        state[:, 1] = -1
+        state[:, 1] = config.NO_COLOR
         return state
 
     def get_state(self) -> np.ndarray:
@@ -37,6 +43,12 @@ class Left(Container):
 
 @dataclass
 class Right(Container):
+    """Right panel of player board where tiles are permanently placed.
+
+    A 5x5 grid where each color can appear once per row and column.
+    Scoring is based on adjacent tiles and completing rows/columns/colors.
+    """
+
     is_complete: bool = False
 
     _state: typing.Optional[np.ndarray] = None
@@ -53,21 +65,21 @@ class Right(Container):
 
     @LazyProperty
     def state(self) -> np.ndarray:
-        return np.full((5, 5), -1, dtype=int)
+        return np.full((5, 5), config.NO_COLOR, dtype=int)
 
     def get_row_score(self, i_row: int, i_col: int) -> int:
         col_score = 0
 
         for before in range(1, config.n_colors - 1):
             j_col = i_col - before
-            if j_col >= 0 and self.state[i_row, j_col] != -1:
+            if j_col >= 0 and self.state[i_row, j_col] != config.NO_COLOR:
                 col_score += 1
             else:
                 break
 
         for after in range(1, config.n_colors):
             j_col = i_col + after
-            if j_col < config.n_colors and self.state[i_row, j_col] != -1:
+            if j_col < config.n_colors and self.state[i_row, j_col] != config.NO_COLOR:
                 col_score += 1
             else:
                 break
@@ -85,14 +97,14 @@ class Right(Container):
 
         for before in range(1, config.n_colors - 1):
             j_row = i_row - before
-            if i_col >= 0 and self.state[j_row, i_col] != -1:
+            if i_col >= 0 and self.state[j_row, i_col] != config.NO_COLOR:
                 row_score += 1
             else:
                 break
 
         for after in range(1, config.n_colors):
             j_row = i_row + after
-            if j_row < config.n_colors and self.state[j_row, i_col] != -1:
+            if j_row < config.n_colors and self.state[j_row, i_col] != config.NO_COLOR:
                 row_score += 1
             else:
                 break
@@ -117,18 +129,25 @@ class Right(Container):
         score = int(not column_score and not row_score)
 
         color_score = self.get_color_score(color)
-        if row_score or column_score:
-            print(self)
-            print(f"{i_row=}, {i_col=}, {color=}")
-            print(f"{score=} + {column_score=}, {row_score=}, {color_score=}")
         return score + color_score + row_score + column_score
 
 
 @dataclass
 class Penalties:
+    """Tracks penalty tiles accumulated during a round.
+
+    Penalties reduce score at end of round with increasing severity:
+    -1, -1, -2, -2, -3, -3, -3 for positions 1-7.
+    """
+
     n: int = 0
 
     def get_score(self) -> int:
+        """Calculate the penalty score based on number of penalty tiles.
+
+        Returns:
+            Total penalty points (negative impact on score).
+        """
         score = 0
         if self.n > 0:
             score += 1 + (self.n > 1)
@@ -145,6 +164,12 @@ class Penalties:
 
 @dataclass
 class Player:
+    """Human player that makes decisions via console input.
+
+    Manages the player's board state (left staging area, right scoring grid)
+    and handles turn-by-turn choices during the game round.
+    """
+
     index: int = 0
     score: int = 0
     is_first: bool = False
@@ -170,7 +195,12 @@ class Player:
     def right(self) -> Right:
         return Right()
 
-    def get_state(self):
+    def get_state(self) -> np.ndarray:
+        """Get the flattened state representation of the player's board.
+
+        Returns:
+            Numpy array containing left panel, right panel, and penalty states.
+        """
         return np.concatenate((
             self.left.state.flatten(),
             self.right.state.flatten(),
@@ -194,7 +224,7 @@ class Player:
                 choices.append(i_col)
 
                 color = self.left.state[i_row, 1]
-                if (self.right.state[i_row, i_col] == -1 and
+                if (self.right.state[i_row, i_col] == config.NO_COLOR and
                         color not in self.right.state[:, i_col]
                         and color not in self.right.state[i_row, :]):
                     self.score += self.right.count_score(i_row, i_col, color)
@@ -202,9 +232,9 @@ class Player:
                 else:
                     self.penalties.n += 1
                 self.left.state[i_row, 0] = 0
-                self.left.state[i_row, 1] = -1
+                self.left.state[i_row, 1] = config.NO_COLOR
             else:
-                choices.append(-1)
+                choices.append(config.NO_COLOR)
 
         self.score -= self.penalties.get_score()
         self.penalties.n = 0
@@ -254,7 +284,7 @@ class Player:
         """
         i_plate, i_color, i_row, n_tiles_retrieved = self.internal_choice(game_state)
 
-        if self.left.state[i_row, 1] not in (-1, i_color):
+        if self.left.state[i_row, 1] not in (config.NO_COLOR, i_color):
             self.penalties.n += int(n_tiles_retrieved)
         elif n_tiles_retrieved:
             total = n_tiles_retrieved + self.left.state[i_row, 0]

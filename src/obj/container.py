@@ -1,10 +1,15 @@
+"""Container base class for tile storage in Azul."""
 from dataclasses import dataclass
-import typing
 from src.config import config
 
 
 @dataclass
 class Container:
+    """Base class for tile containers (Bag, Plate, Central, Graveyard).
+
+    Stores counts of each tile color and provides indexing operations.
+    Colors are indexed 0-4: black, white, red, blue, yellow.
+    """
     index: int = 0
 
     n_blacks: int = 0

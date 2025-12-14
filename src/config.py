@@ -1,13 +1,22 @@
+"""Configuration settings for Azul RL training and game rules."""
 from dataclasses import dataclass
 import typing
 import numpy as np
 import os
 
+
 @dataclass
 class Config:
+    """Global configuration for Azul game rules and RL hyperparameters.
+
+    Contains tile counts, scoring bonuses, neural network architecture,
+    training parameters, and file paths for model persistence.
+    """
+    # Tile and game constants
     n_tile_per_color: int = 20
     n_tile_per_plate: int = 4
     taboo_penalty: int = 1000
+    NO_COLOR: int = -1  # Sentinel value for empty cell / no color selected
 
     # RL hyperparameters
     gamma: float = 0.99  # Discount factor for temporal credit assignment
@@ -61,7 +70,18 @@ class Config:
         os.makedirs(self.weights_dir, exist_ok=True)
 
 
-    def get_plate_number(self, n_players: int):
+    def get_plate_number(self, n_players: int) -> int:
+        """Get the number of factory plates based on player count.
+
+        Args:
+            n_players: Number of players (must be 3 or 4).
+
+        Returns:
+            Number of factory plates for the game.
+
+        Raises:
+            NotImplementedError: If player count is not 3 or 4.
+        """
         if n_players == 3:
             self.n_plates = 7
         elif n_players == 4:
@@ -71,12 +91,30 @@ class Config:
         return self.n_plates
 
     def get_tile_retrieved(self, i_plate: int, i_color: int, game_state: np.ndarray) -> int:
+        """Get the number of tiles of a color on a plate from game state.
+
+        Args:
+            i_plate: Index of the plate (0 to n_plates-1, or n_plates for central).
+            i_color: Index of the color (0 to n_colors-1).
+            game_state: Flattened numpy array of game state.
+
+        Returns:
+            Number of tiles of the specified color on the specified plate.
+        """
         start_index = 2 * self.n_colors
         index = start_index + self.n_colors * i_plate + i_color
         return game_state[index]
 
     def get_color(self, color_index: int) -> str:
-        if color_index == -1:
+        """Get the color name from its index.
+
+        Args:
+            color_index: Index of the color (0-4), or NO_COLOR for no color.
+
+        Returns:
+            Name of the color, or "None" if index is NO_COLOR.
+        """
+        if color_index == self.NO_COLOR:
             return "None"
         return self.colors[color_index]
 

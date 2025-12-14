@@ -1,11 +1,18 @@
-from src.obj.container import Container
+"""Central area container for Azul game tiles."""
 from dataclasses import dataclass
-import typing
+from src.obj.container import Container
 
 
 @dataclass
 class Central(Container):
-    has_first_player_tile = True
+    """Central area where remaining tiles accumulate during a round.
+
+    Tiles that are not selected from factory plates move to the central.
+    Also tracks the first player tile which gives a penalty but grants
+    first turn next round.
+    """
+
+    has_first_player_tile: bool = True
 
     displayed_name: str = "Center"
 
