@@ -101,7 +101,7 @@ class Right(Container):
             row_score += 1
 
         if row_score == 5:
-            row_score += config.complete_col_score
+            row_score += config.complete_column_score
         return row_score
 
     def get_color_score(self, color: int) -> int:
