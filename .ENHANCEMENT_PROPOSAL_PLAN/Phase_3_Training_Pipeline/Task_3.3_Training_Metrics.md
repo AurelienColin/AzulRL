@@ -65,10 +65,10 @@ metrics = {
 **Action**: Persist metrics for later analysis
 
 ## Acceptance Criteria
-- [ ] All key metrics tracked during training
-- [ ] Win rate shows improvement over episodes
-- [ ] Invalid action rate decreases
-- [ ] Visualization shows all metrics in subplot grid
+- [x] All key metrics tracked during training
+- [x] Win rate shows improvement over episodes (evaluated every 50 games)
+- [x] Invalid action rate tracked (row and column separately)
+- [x] Visualization shows all metrics in 3x4 subplot grid
 
 ## Dependencies
 - None (can be implemented incrementally)

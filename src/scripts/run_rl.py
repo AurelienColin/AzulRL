@@ -1,9 +1,11 @@
 import argparse
+import json
 import os
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import typing
+from dataclasses import dataclass, field, asdict
 from rignak.src.logging_utils import logger
 from src.obj.game import Game
 from src.obj.bot_player import BotPlayer
@@ -11,6 +13,105 @@ from src.obj.replay_buffer import ReplayBuffer
 from src.config import config
 from src.utils import to_hot_encoded
 from rignak.src.custom_display import Display
+
+
+@dataclass
+class TrainingMetrics:
+    """
+    Comprehensive metrics tracking for RL training.
+
+    Tracks loss, win rates, scores, exploration, and training dynamics.
+    All lists are indexed by episode number.
+    """
+    # Episode tracking
+    episode: typing.List[int] = field(default_factory=list)
+
+    # Loss metrics (per model)
+    loss_choose: typing.List[float] = field(default_factory=list)
+    loss_eor: typing.List[float] = field(default_factory=list)
+
+    # Performance metrics
+    win_rate: typing.List[float] = field(default_factory=list)
+    avg_score: typing.List[float] = field(default_factory=list)
+    avg_reward: typing.List[float] = field(default_factory=list)
+
+    # Game dynamics
+    game_length: typing.List[int] = field(default_factory=list)  # Number of rounds
+    n_turns: typing.List[int] = field(default_factory=list)      # Number of player turns
+
+    # Invalid action tracking
+    invalid_row_rate: typing.List[float] = field(default_factory=list)  # Tiles to penalties
+    invalid_col_rate: typing.List[float] = field(default_factory=list)  # EOR placement failures
+
+    # Training hyperparameters over time
+    exploration_rate: typing.List[float] = field(default_factory=list)
+    learning_rate: typing.List[float] = field(default_factory=list)
+
+    # Buffer statistics
+    buffer_size_choose: typing.List[int] = field(default_factory=list)
+    buffer_size_eor: typing.List[int] = field(default_factory=list)
+
+    def record_episode(
+            self,
+            episode_num: int,
+            loss_choose: float,
+            loss_eor: float,
+            avg_score: float,
+            game_length: int,
+            n_turns: int,
+            exploration_rate: float,
+            learning_rate: float,
+            buffer_size_choose: int,
+            buffer_size_eor: int,
+            win_rate: typing.Optional[float] = None,
+            invalid_row_rate: float = 0.0,
+            invalid_col_rate: float = 0.0,
+            avg_reward: float = 0.0
+    ) -> None:
+        """Record metrics for a single episode."""
+        self.episode.append(episode_num)
+        self.loss_choose.append(loss_choose)
+        self.loss_eor.append(loss_eor)
+        self.avg_score.append(avg_score)
+        self.game_length.append(game_length)
+        self.n_turns.append(n_turns)
+        self.exploration_rate.append(exploration_rate)
+        self.learning_rate.append(learning_rate)
+        self.buffer_size_choose.append(buffer_size_choose)
+        self.buffer_size_eor.append(buffer_size_eor)
+        self.win_rate.append(win_rate if win_rate is not None else float('nan'))
+        self.invalid_row_rate.append(invalid_row_rate)
+        self.invalid_col_rate.append(invalid_col_rate)
+        self.avg_reward.append(avg_reward)
+
+    def save_to_json(self, filepath: str) -> None:
+        """Save metrics to JSON file for later analysis."""
+        # Convert to dict, handling NaN values for JSON compatibility
+        metrics_dict = asdict(self)
+        for key, values in metrics_dict.items():
+            metrics_dict[key] = [
+                None if (isinstance(v, float) and np.isnan(v)) else v
+                for v in values
+            ]
+        with open(filepath, 'w') as f:
+            json.dump(metrics_dict, f, indent=2)
+        logger(f"Metrics saved to {filepath}")
+
+    @classmethod
+    def load_from_json(cls, filepath: str) -> 'TrainingMetrics':
+        """Load metrics from JSON file."""
+        with open(filepath, 'r') as f:
+            metrics_dict = json.load(f)
+        # Convert None back to NaN
+        for key, values in metrics_dict.items():
+            metrics_dict[key] = [
+                float('nan') if v is None else v
+                for v in values
+            ]
+        metrics = cls()
+        for key, values in metrics_dict.items():
+            setattr(metrics, key, values)
+        return metrics
 
 
 class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -242,6 +343,59 @@ def train_from_buffer(
     return loss
 
 
+def evaluate_win_rate(
+        player_kwargs: typing.Dict[str, typing.Any],
+        n_games: int = 20
+) -> typing.Tuple[float, float]:
+    """
+    Evaluate win rate against random opponents.
+
+    Runs evaluation games where player 0 uses the trained policy (epsilon=0)
+    and other players use pure random actions (epsilon=1).
+
+    Args:
+        player_kwargs: Keyword arguments for BotPlayer construction.
+        n_games: Number of evaluation games to play.
+
+    Returns:
+        Tuple of (win_rate, avg_score) where win_rate is fraction of games won
+        and avg_score is average final score of player 0.
+    """
+    wins = 0
+    total_score = 0.0
+    n_players = player_kwargs.get('n_players', 4)
+
+    for _ in range(n_games):
+        game = Game(n_players=n_players)
+
+        # Player 0 uses trained policy (epsilon=0), others use random (epsilon=1)
+        for i in range(n_players):
+            epsilon = 0.0 if i == 0 else 1.0
+            game.players[i] = BotPlayer(index=i, epsilon=epsilon, **player_kwargs)
+        game.players[0].is_first = True
+
+        # Play full game
+        i_round = 0
+        while not game.has_ended() and i_round < 15:
+            i_round += 1
+            game.round(printing=False)
+            game.end_of_round(printing=False)
+
+        # Determine winner
+        scores = [p.score for p in game.players]
+        max_score = max(scores)
+        total_score += scores[0]
+
+        # Win if player 0 has the highest score (ties count as win)
+        if scores[0] == max_score:
+            wins += 1
+
+    win_rate = wins / n_games
+    avg_score = total_score / n_games
+
+    return win_rate, avg_score
+
+
 def train(
         n_games: int = 1000,
         plot_every: int = 1,
@@ -289,14 +443,8 @@ def train(
     logger(f"Initialized replay buffers with capacity={config.replay_buffer_size}, "
            f"batch_size={config.batch_size}, min_buffer_size={config.min_buffer_size}")
 
-    scores = []
-    n_turns = []
-    n_rounds = []
-    losses1 = []
-    losses2 = []
-    epsilons = []
-    learning_rates = []
-    buffer_sizes = []
+    # Initialize comprehensive metrics tracking
+    metrics = TrainingMetrics()
 
     # Track epsilon across games (shared state)
     current_epsilon = config.epsilon_start
@@ -310,11 +458,13 @@ def train(
         game = Game(n_players=n_players)
         for i in range(game.n_players):
             game.players[i] = BotPlayer(index=i, epsilon=current_epsilon, **player_kwargs)
+            game.players[i].reset_metrics()  # Reset per-game metrics
         game.players[0].is_first = True
 
         game_loss1 = 0.0
         game_loss2 = 0.0
         train_count = 0
+        game_reward_sum = 0.0
 
         while True:
             i_round += 1
@@ -325,6 +475,11 @@ def train(
                 collect_round_experiences(game)
 
             i_turn += round_turns
+
+            # Track rewards for this round (average over all reward components)
+            if rewards_1 is not None:
+                for r in rewards_1:
+                    game_reward_sum += np.sum(np.abs(r))
 
             # Store experiences in buffers
             if states_1 is not None and rewards_1 is not None:
@@ -351,51 +506,105 @@ def train(
             if i_round > 15:
                 break
 
-        scores.append(np.nanmean(after_score))
-        n_turns.append(i_turn)
-        n_rounds.append(i_round)
-        # Average loss per training step, or 0 if no training occurred
-        losses1.append(game_loss1 / max(train_count, 1))
-        losses2.append(game_loss2 / max(train_count, 1))
-        epsilons.append(current_epsilon)
+        # Collect invalid action rates from player 0 (the bot we're training)
+        invalid_row_rate, invalid_col_rate = game.players[0].get_invalid_rates()
+
         # Get current learning rate from schedule (use optimizer_1's step count)
         current_lr = float(lr_schedule(optimizer_1.iterations))
-        learning_rates.append(current_lr)
-        buffer_sizes.append((len(buffer_1), len(buffer_2)))
+
+        # Evaluate win rate periodically
+        win_rate = None
+        if (game_index + 1) % config.eval_every_n_games == 0:
+            logger(f"Evaluating win rate at game {game_index + 1}...")
+            win_rate, eval_score = evaluate_win_rate(player_kwargs, config.eval_n_games)
+            logger(f"Win rate: {win_rate:.2%}, Avg eval score: {eval_score:.1f}")
+
+        # Record metrics for this episode
+        metrics.record_episode(
+            episode_num=game_index + 1,
+            loss_choose=game_loss1 / max(train_count, 1),
+            loss_eor=game_loss2 / max(train_count, 1),
+            avg_score=float(np.nanmean(after_score)),
+            game_length=i_round,
+            n_turns=i_turn,
+            exploration_rate=current_epsilon,
+            learning_rate=current_lr,
+            buffer_size_choose=len(buffer_1),
+            buffer_size_eor=len(buffer_2),
+            win_rate=win_rate,
+            invalid_row_rate=invalid_row_rate,
+            invalid_col_rate=invalid_col_rate,
+            avg_reward=game_reward_sum / max(i_turn, 1)
+        )
 
         # Decay epsilon for the next game
         current_epsilon = max(config.epsilon_end, current_epsilon * config.epsilon_decay)
 
         if game_index % plot_every == 0 and game_index > 0:
-            plot_history(scores, n_turns, n_rounds, losses1, losses2, epsilons, learning_rates)
+            plot_metrics_dashboard(metrics)
+            metrics.save_to_json(config.metrics_path)
 
-    # Save weights
-    logger("Saving model weights...")
+    # Final save
+    logger("Saving model weights and metrics...")
     model_1.save_weights(config.model_weights_path_1)
     model_2.save_weights(config.model_weights_path_2)
+    metrics.save_to_json(config.metrics_path)
+    plot_metrics_dashboard(metrics)
     logger(f"Final buffer sizes: buffer_1={len(buffer_1)}, buffer_2={len(buffer_2)}")
 
 
-def plot_history(
-        mean_scores: typing.List[float],
-        n_turns: typing.List[int],
-        n_rounds: typing.List[int],
-        losses1: typing.List[float],
-        losses2: typing.List[float],
-        epsilons: typing.List[float],
-        learning_rates: typing.List[float]
-) -> None:
-    display = Display(nrows=2, ncols=4, suptitle=f"History after {len(mean_scores)} games.")
+def plot_metrics_dashboard(metrics: TrainingMetrics) -> None:
+    """
+    Create a comprehensive visualization dashboard for training metrics.
 
-    kwargs = dict(xlabel="Game index")
-    x = range(len(mean_scores))
-    display[0].plot(x, mean_scores, ylabel="Score", title="Mean score after the game.", **kwargs)
-    display[1].plot(x, n_turns, ylabel="n", title="Number of player turns.", **kwargs)
-    display[2].plot(x, n_rounds, ylabel="n", title="Number of game rounds.", **kwargs)
-    display[3].plot(x, losses1, ylabel="Loss", title="In-turn loss", **kwargs)
-    display[4].plot(x, losses2, ylabel="Loss", title="End-turn loss", **kwargs)
-    display[5].plot(x, epsilons, ylabel="Epsilon", title="Exploration rate decay", **kwargs)
-    display[6].plot(x, learning_rates, ylabel="LR", title="Learning rate schedule", **kwargs)
+    Displays a 3x4 grid of plots showing:
+    - Performance: scores, win rate, rewards
+    - Losses: choose model, EOR model
+    - Training dynamics: exploration, learning rate
+    - Invalid action rates and game dynamics
+
+    Args:
+        metrics: TrainingMetrics instance containing all tracked data.
+    """
+    n_episodes = len(metrics.episode)
+    if n_episodes == 0:
+        return
+
+    display = Display(nrows=3, ncols=4, suptitle=f"Training Metrics - {n_episodes} episodes")
+
+    kwargs = dict(xlabel="Episode")
+    x = metrics.episode
+
+    # Row 1: Performance metrics
+    display[0].plot(x, metrics.avg_score, ylabel="Score", title="Average Score", **kwargs)
+
+    # Win rate (filter out NaN for plotting)
+    valid_wr = [(ep, wr) for ep, wr in zip(x, metrics.win_rate) if not np.isnan(wr)]
+    if valid_wr:
+        wr_x, wr_y = zip(*valid_wr)
+        display[1].plot(wr_x, wr_y, ylabel="Win Rate", title="Win Rate vs Random", **kwargs)
+        display[1].ax.set_ylim(0, 1)
+    else:
+        display[1].plot([], [], ylabel="Win Rate", title="Win Rate vs Random (pending)", **kwargs)
+
+    display[2].plot(x, metrics.avg_reward, ylabel="Reward", title="Average Reward", **kwargs)
+    display[3].plot(x, metrics.n_turns, ylabel="Turns", title="Turns per Game", **kwargs)
+
+    # Row 2: Loss and training parameters
+    display[4].plot(x, metrics.loss_choose, ylabel="Loss", title="Choose Model Loss", **kwargs)
+    display[5].plot(x, metrics.loss_eor, ylabel="Loss", title="EOR Model Loss", **kwargs)
+    display[6].plot(x, metrics.exploration_rate, ylabel="Epsilon", title="Exploration Rate", **kwargs)
+    display[7].plot(x, metrics.learning_rate, ylabel="LR", title="Learning Rate", **kwargs)
+
+    # Row 3: Invalid actions, game dynamics, buffer sizes
+    display[8].plot(x, metrics.invalid_row_rate, ylabel="Rate", title="Invalid Row Rate", **kwargs)
+    display[9].plot(x, metrics.invalid_col_rate, ylabel="Rate", title="Invalid Col Rate", **kwargs)
+    display[10].plot(x, metrics.game_length, ylabel="Rounds", title="Game Length", **kwargs)
+    display[11].plot(
+        x, metrics.buffer_size_choose,
+        ylabel="Size", title="Buffer Sizes", **kwargs
+    )
+
     display.show(export_filename=config.history_path)
 
 

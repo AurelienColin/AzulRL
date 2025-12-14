@@ -27,6 +27,10 @@ class Config:
     lr_decay_steps: int = 10000      # Steps for full cosine decay cycle
     lr_warmup_steps: int = 500       # Linear warmup steps before decay
 
+    # Evaluation parameters
+    eval_every_n_games: int = 50     # Evaluate win rate every N games
+    eval_n_games: int = 20           # Number of evaluation games to play
+
     # Network architecture
     hidden_layers: typing.Tuple[int, ...] = (128, 64, 32)  # Layer sizes (wide to narrow)
     dropout_rate: float = 0.1  # Regularization between dense layers
@@ -51,6 +55,7 @@ class Config:
     model_weights_path_1: str = os.path.join(weights_dir, 'model_weights_1.weights.h5')
     model_weights_path_2: str = os.path.join(weights_dir, 'model_weights_2.weights.h5')
     history_path: str = os.path.join(weights_dir, 'history.png')
+    metrics_path: str = os.path.join(weights_dir, 'metrics.json')
 
     def __post_init__(self):
         os.makedirs(self.weights_dir, exist_ok=True)
