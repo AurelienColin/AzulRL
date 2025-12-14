@@ -13,6 +13,71 @@ from src.utils import to_hot_encoded
 from rignak.src.custom_display import Display
 
 
+class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
+    """
+    Learning rate schedule with linear warmup followed by cosine decay.
+
+    Schedule:
+        - For step < warmup_steps: lr = lr_initial * (step / warmup_steps)
+        - For step >= warmup_steps: lr = lr_min + 0.5 * (lr_initial - lr_min) *
+                                         (1 + cos(pi * (step - warmup_steps) / decay_steps))
+
+    Reference: Loshchilov & Hutter (2017) - SGDR: Stochastic Gradient Descent with Warm Restarts
+    """
+
+    def __init__(
+            self,
+            lr_initial: float,
+            lr_min: float,
+            decay_steps: int,
+            warmup_steps: int = 0,
+            name: str = "WarmupCosineDecay"
+    ):
+        """
+        Initialize warmup cosine decay schedule.
+
+        Args:
+            lr_initial: Initial (maximum) learning rate after warmup.
+            lr_min: Minimum learning rate at end of decay.
+            decay_steps: Number of steps for cosine decay (after warmup).
+            warmup_steps: Number of steps for linear warmup (default: 0, no warmup).
+            name: Name of the schedule.
+        """
+        super().__init__()
+        self.lr_initial = lr_initial
+        self.lr_min = lr_min
+        self.decay_steps = decay_steps
+        self.warmup_steps = warmup_steps
+        self.name = name
+
+    def __call__(self, step: tf.Tensor) -> tf.Tensor:
+        """Compute learning rate at given step."""
+        step = tf.cast(step, tf.float32)
+        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
+        decay_steps = tf.cast(self.decay_steps, tf.float32)
+
+        # Linear warmup phase
+        warmup_lr = self.lr_initial * (step / tf.maximum(warmup_steps, 1.0))
+
+        # Cosine decay phase (step adjusted for warmup)
+        decay_step = step - warmup_steps
+        cosine_decay = 0.5 * (1.0 + tf.cos(np.pi * decay_step / decay_steps))
+        decay_lr = self.lr_min + (self.lr_initial - self.lr_min) * cosine_decay
+
+        # Use warmup LR if in warmup phase, else use decay LR
+        return tf.cond(step < warmup_steps, lambda: warmup_lr, lambda: decay_lr)
+
+    def get_config(self) -> typing.Dict[str, typing.Any]:
+        """Return config for serialization."""
+        return {
+            "lr_initial": self.lr_initial,
+            "lr_min": self.lr_min,
+            "decay_steps": self.decay_steps,
+            "warmup_steps": self.warmup_steps,
+            "name": self.name
+        }
+
+
 def policy_gradient_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     """
     Policy gradient loss for REINFORCE algorithm.
@@ -179,7 +244,6 @@ def train_from_buffer(
 
 def train(
         n_games: int = 1000,
-        learning_rate: float = 0.1,
         plot_every: int = 1,
         n_players: int = 4
 ) -> None:
@@ -201,8 +265,23 @@ def train(
     model_1.summary()
     model_2.summary()
 
-    model_1.compile(loss=policy_gradient_loss, optimizer=tf.keras.optimizers.AdamW(learning_rate=learning_rate))
-    model_2.compile(loss=policy_gradient_loss, optimizer=tf.keras.optimizers.AdamW(learning_rate=learning_rate))
+    # Create learning rate schedule with warmup and cosine decay
+    lr_schedule = WarmupCosineDecay(
+        lr_initial=config.lr_initial,
+        lr_min=config.lr_min,
+        decay_steps=config.lr_decay_steps,
+        warmup_steps=config.lr_warmup_steps
+    )
+    logger(f"LR schedule: warmup={config.lr_warmup_steps} steps, "
+           f"decay={config.lr_decay_steps} steps, "
+           f"lr_initial={config.lr_initial}, lr_min={config.lr_min}")
+
+    # Create optimizers with shared LR schedule
+    optimizer_1 = tf.keras.optimizers.AdamW(learning_rate=lr_schedule)
+    optimizer_2 = tf.keras.optimizers.AdamW(learning_rate=lr_schedule)
+
+    model_1.compile(loss=policy_gradient_loss, optimizer=optimizer_1)
+    model_2.compile(loss=policy_gradient_loss, optimizer=optimizer_2)
 
     # Initialize replay buffers for both models
     buffer_1 = ReplayBuffer(capacity=config.replay_buffer_size)
@@ -216,6 +295,7 @@ def train(
     losses1 = []
     losses2 = []
     epsilons = []
+    learning_rates = []
     buffer_sizes = []
 
     # Track epsilon across games (shared state)
@@ -278,13 +358,16 @@ def train(
         losses1.append(game_loss1 / max(train_count, 1))
         losses2.append(game_loss2 / max(train_count, 1))
         epsilons.append(current_epsilon)
+        # Get current learning rate from schedule (use optimizer_1's step count)
+        current_lr = float(lr_schedule(optimizer_1.iterations))
+        learning_rates.append(current_lr)
         buffer_sizes.append((len(buffer_1), len(buffer_2)))
 
         # Decay epsilon for the next game
         current_epsilon = max(config.epsilon_end, current_epsilon * config.epsilon_decay)
 
         if game_index % plot_every == 0 and game_index > 0:
-            plot_history(scores, n_turns, n_rounds, losses1, losses2, epsilons)
+            plot_history(scores, n_turns, n_rounds, losses1, losses2, epsilons, learning_rates)
 
     # Save weights
     logger("Saving model weights...")
@@ -299,26 +382,27 @@ def plot_history(
         n_rounds: typing.List[int],
         losses1: typing.List[float],
         losses2: typing.List[float],
-        epsilons: typing.List[float]
+        epsilons: typing.List[float],
+        learning_rates: typing.List[float]
 ) -> None:
-    display = Display(ncols=6, suptitle=f"History after {len(mean_scores)} games.")
+    display = Display(nrows=2, ncols=4, suptitle=f"History after {len(mean_scores)} games.")
 
     kwargs = dict(xlabel="Game index")
     x = range(len(mean_scores))
     display[0].plot(x, mean_scores, ylabel="Score", title="Mean score after the game.", **kwargs)
     display[1].plot(x, n_turns, ylabel="n", title="Number of player turns.", **kwargs)
     display[2].plot(x, n_rounds, ylabel="n", title="Number of game rounds.", **kwargs)
-    display[3].plot(x, losses1, ylabel="Score", title="In-turn loss", **kwargs)
-    display[4].plot(x, losses2, ylabel="Score", title="End-turn loss", **kwargs)
+    display[3].plot(x, losses1, ylabel="Loss", title="In-turn loss", **kwargs)
+    display[4].plot(x, losses2, ylabel="Loss", title="End-turn loss", **kwargs)
     display[5].plot(x, epsilons, ylabel="Epsilon", title="Exploration rate decay", **kwargs)
+    display[6].plot(x, learning_rates, ylabel="LR", title="Learning rate schedule", **kwargs)
     display.show(export_filename=config.history_path)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--n_games', type=int, default=1000)
-    parser.add_argument('--learning_rate', type=float, default=0.001)
     parser.add_argument('--plot_every', type=int, default=1)
     args = parser.parse_args()
 
-    train(args.n_games, args.learning_rate, args.plot_every)
+    train(args.n_games, args.plot_every)

@@ -21,6 +21,12 @@ class Config:
     min_buffer_size: int = 128       # Minimum experiences before training starts
     train_every_n_rounds: int = 4    # Train after every N rounds of gameplay
 
+    # Learning rate schedule parameters
+    lr_initial: float = 0.001        # Initial learning rate
+    lr_min: float = 0.00001          # Minimum learning rate (1% of initial)
+    lr_decay_steps: int = 10000      # Steps for full cosine decay cycle
+    lr_warmup_steps: int = 500       # Linear warmup steps before decay
+
     # Network architecture
     hidden_layers: typing.Tuple[int, ...] = (128, 64, 32)  # Layer sizes (wide to narrow)
     dropout_rate: float = 0.1  # Regularization between dense layers
