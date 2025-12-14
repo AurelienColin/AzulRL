@@ -10,6 +10,8 @@ from rignak.src.logging_utils import logger
 from src.obj.game import Game
 from src.obj.bot_player import BotPlayer
 from src.obj.replay_buffer import ReplayBuffer
+from src.obj.random_agent import RandomAgent
+from src.obj.greedy_agent import GreedyAgent
 from src.config import config
 from src.utils import to_hot_encoded
 from rignak.src.custom_display import Display
@@ -51,6 +53,10 @@ class TrainingMetrics:
     buffer_size_choose: typing.List[int] = field(default_factory=list)
     buffer_size_eor: typing.List[int] = field(default_factory=list)
 
+    # Baseline comparison metrics
+    win_rate_vs_random: typing.List[float] = field(default_factory=list)
+    win_rate_vs_greedy: typing.List[float] = field(default_factory=list)
+
     def record_episode(
             self,
             episode_num: int,
@@ -66,7 +72,9 @@ class TrainingMetrics:
             win_rate: typing.Optional[float] = None,
             invalid_row_rate: float = 0.0,
             invalid_col_rate: float = 0.0,
-            avg_reward: float = 0.0
+            avg_reward: float = 0.0,
+            win_rate_vs_random: typing.Optional[float] = None,
+            win_rate_vs_greedy: typing.Optional[float] = None
     ) -> None:
         """Record metrics for a single episode."""
         self.episode.append(episode_num)
@@ -83,6 +91,12 @@ class TrainingMetrics:
         self.invalid_row_rate.append(invalid_row_rate)
         self.invalid_col_rate.append(invalid_col_rate)
         self.avg_reward.append(avg_reward)
+        self.win_rate_vs_random.append(
+            win_rate_vs_random if win_rate_vs_random is not None else float('nan')
+        )
+        self.win_rate_vs_greedy.append(
+            win_rate_vs_greedy if win_rate_vs_greedy is not None else float('nan')
+        )
 
     def save_to_json(self, filepath: str) -> None:
         """Save metrics to JSON file for later analysis."""
@@ -396,6 +410,74 @@ def evaluate_win_rate(
     return win_rate, avg_score
 
 
+def evaluate_vs_baseline(
+        bot_player: BotPlayer,
+        baseline_type: str,
+        n_games: int = 20,
+        n_opponents: int = 3
+) -> float:
+    """
+    Evaluate a trained bot against baseline agents (RandomAgent or GreedyAgent).
+
+    The bot plays as player 0 against n_opponents baseline agents.
+
+    Args:
+        bot_player: The trained BotPlayer to evaluate (provides model weights).
+        baseline_type: Type of baseline opponent ('random' or 'greedy').
+        n_games: Number of evaluation games to play.
+        n_opponents: Number of opponent agents (total players = n_opponents + 1).
+
+    Returns:
+        float: Win rate of the bot against the baseline agents.
+    """
+    wins = 0
+    n_players = n_opponents + 1
+
+    for _ in range(n_games):
+        game = Game(n_players=n_players)
+
+        # Create a fresh bot player for evaluation with epsilon=0 (greedy policy)
+        eval_bot = BotPlayer(
+            index=0,
+            n_plates=game.n_plates,
+            n_players=n_players,
+            input_length=len(game.get_state()),
+            start_input_index=config.start_input_index,
+            epsilon=0.0  # Use greedy policy for evaluation
+        )
+        # Share model weights with the trained bot
+        eval_bot._choose_model = bot_player.choose_model
+        eval_bot._end_of_round_model = bot_player.end_of_round_model
+        game.players[0] = eval_bot
+        eval_bot.is_first = True
+
+        # Create baseline opponents
+        for i in range(1, n_players):
+            if baseline_type.lower() == 'random':
+                game.players[i] = RandomAgent(index=i)
+            elif baseline_type.lower() == 'greedy':
+                game.players[i] = GreedyAgent(index=i)
+            else:
+                raise ValueError(f"Unknown baseline type: {baseline_type}")
+
+        # Play full game
+        i_round = 0
+        while not game.has_ended() and i_round < 15:
+            i_round += 1
+            game.round(printing=False)
+            game.end_of_round(printing=False)
+
+        # Determine winner
+        scores = [p.score for p in game.players]
+        max_score = max(scores)
+
+        # Win if bot has the highest score (ties count as win)
+        if scores[0] == max_score:
+            wins += 1
+
+    return wins / n_games
+
+
 def train(
         n_games: int = 1000,
         plot_every: int = 1,
@@ -514,10 +596,25 @@ def train(
 
         # Evaluate win rate periodically
         win_rate = None
+        win_rate_vs_random = None
+        win_rate_vs_greedy = None
         if (game_index + 1) % config.eval_every_n_games == 0:
-            logger(f"Evaluating win rate at game {game_index + 1}...")
+            logger(f"Evaluating at game {game_index + 1}...")
+
+            # Evaluate vs random BotPlayer opponents (legacy)
             win_rate, eval_score = evaluate_win_rate(player_kwargs, config.eval_n_games)
-            logger(f"Win rate: {win_rate:.2%}, Avg eval score: {eval_score:.1f}")
+            logger(f"  vs Random BotPlayer: {win_rate:.2%}, Avg score: {eval_score:.1f}")
+
+            # Evaluate vs baseline agents
+            win_rate_vs_random = evaluate_vs_baseline(
+                dummy_player, 'random', n_games=config.eval_n_games
+            )
+            logger(f"  vs RandomAgent: {win_rate_vs_random:.2%}")
+
+            win_rate_vs_greedy = evaluate_vs_baseline(
+                dummy_player, 'greedy', n_games=config.eval_n_games
+            )
+            logger(f"  vs GreedyAgent: {win_rate_vs_greedy:.2%}")
 
         # Record metrics for this episode
         metrics.record_episode(
@@ -534,7 +631,9 @@ def train(
             win_rate=win_rate,
             invalid_row_rate=invalid_row_rate,
             invalid_col_rate=invalid_col_rate,
-            avg_reward=game_reward_sum / max(i_turn, 1)
+            avg_reward=game_reward_sum / max(i_turn, 1),
+            win_rate_vs_random=win_rate_vs_random,
+            win_rate_vs_greedy=win_rate_vs_greedy
         )
 
         # Decay epsilon for the next game
@@ -578,14 +677,28 @@ def plot_metrics_dashboard(metrics: TrainingMetrics) -> None:
     # Row 1: Performance metrics
     display[0].plot(x, metrics.avg_score, ylabel="Score", title="Average Score", **kwargs)
 
-    # Win rate (filter out NaN for plotting)
-    valid_wr = [(ep, wr) for ep, wr in zip(x, metrics.win_rate) if not np.isnan(wr)]
-    if valid_wr:
-        wr_x, wr_y = zip(*valid_wr)
-        display[1].plot(wr_x, wr_y, ylabel="Win Rate", title="Win Rate vs Random", **kwargs)
+    # Win rate vs baselines (filter out NaN for plotting)
+    valid_wr_random = [
+        (ep, wr) for ep, wr in zip(x, metrics.win_rate_vs_random) if not np.isnan(wr)
+    ]
+    valid_wr_greedy = [
+        (ep, wr) for ep, wr in zip(x, metrics.win_rate_vs_greedy) if not np.isnan(wr)
+    ]
+    if valid_wr_random or valid_wr_greedy:
+        if valid_wr_random:
+            wr_x, wr_y = zip(*valid_wr_random)
+            display[1].ax.plot(wr_x, wr_y, 'b-', label='vs Random')
+        if valid_wr_greedy:
+            wr_x, wr_y = zip(*valid_wr_greedy)
+            display[1].ax.plot(wr_x, wr_y, 'r-', label='vs Greedy')
         display[1].ax.set_ylim(0, 1)
+        display[1].ax.set_xlabel("Episode")
+        display[1].ax.set_ylabel("Win Rate")
+        display[1].ax.set_title("Win Rate vs Baselines")
+        display[1].ax.legend()
+        display[1].ax.axhline(y=0.25, color='gray', linestyle='--', alpha=0.5, label='Random chance')
     else:
-        display[1].plot([], [], ylabel="Win Rate", title="Win Rate vs Random (pending)", **kwargs)
+        display[1].plot([], [], ylabel="Win Rate", title="Win Rate (pending)", **kwargs)
 
     display[2].plot(x, metrics.avg_reward, ylabel="Reward", title="Average Reward", **kwargs)
     display[3].plot(x, metrics.n_turns, ylabel="Turns", title="Turns per Game", **kwargs)

@@ -1,7 +1,7 @@
 # AzulRL Enhancement Proposal Plan - Status Summary
 
 **Last Updated**: 2025-12-14
-**Project Status**: Phase 3 Complete - Ready for Phase 4 (Validation)
+**Project Status**: Phase 4 In Progress - Task 4.2 Complete
 
 ---
 
@@ -109,13 +109,13 @@ This plan addresses these issues across 5 phases with 16 tasks and 50+ steps.
 | 4.1.6 | Test training loop | test-automator | Task_4.1_Unit_Tests.md:L45-L47 | test/test_training.py | [x] |
 | 4.1.7 | Test state representation | test-automator | Task_4.1_Unit_Tests.md:L49-L51 | test/test_state.py | [x] |
 | 4.1.8 | Add CI integration | devops-engineer | Task_4.1_Unit_Tests.md:L53-L55 | .gitlab-ci.yml | [x] |
-| 4.2 | Baseline Agent Comparison | machine-learning-researcher | Task_4.2_Baseline_Comparison.md | - | [ ] |
-| 4.2.1 | Create RandomAgent class | python-pro | Task_4.2_Baseline_Comparison.md:L28-L30 | random_agent.py (new) | [ ] |
-| 4.2.2 | Create GreedyAgent class | python-pro | Task_4.2_Baseline_Comparison.md:L32-L34 | greedy_agent.py (new) | [ ] |
-| 4.2.3 | Create evaluation harness | python-pro | Task_4.2_Baseline_Comparison.md:L36-L38 | evaluate.py (new) | [ ] |
-| 4.2.4 | Add evaluation to training | python-pro | Task_4.2_Baseline_Comparison.md:L40-L42 | run_rl.py | [ ] |
-| 4.2.5 | Track win rate over training | python-pro | Task_4.2_Baseline_Comparison.md:L44-L46 | run_rl.py | [ ] |
-| 4.2.6 | Create performance report | technical-writer | Task_4.2_Baseline_Comparison.md:L48-L50 | - | [ ] |
+| 4.2 | Baseline Agent Comparison | machine-learning-researcher | Task_4.2_Baseline_Comparison.md | - | [x] |
+| 4.2.1 | Create RandomAgent class | python-pro | Task_4.2_Baseline_Comparison.md:L28-L30 | random_agent.py | [x] |
+| 4.2.2 | Create GreedyAgent class | python-pro | Task_4.2_Baseline_Comparison.md:L32-L34 | greedy_agent.py | [x] |
+| 4.2.3 | Create evaluation harness | python-pro | Task_4.2_Baseline_Comparison.md:L36-L38 | evaluate.py | [x] |
+| 4.2.4 | Add evaluation to training | python-pro | Task_4.2_Baseline_Comparison.md:L40-L42 | run_rl.py:608-617 | [x] |
+| 4.2.5 | Track win rate over training | python-pro | Task_4.2_Baseline_Comparison.md:L44-L46 | run_rl.py:56-58 | [x] |
+| 4.2.6 | Create performance report | technical-writer | Task_4.2_Baseline_Comparison.md:L48-L50 | baseline_report.py | [x] |
 | 4.3 | Code Review and Cleanup | code-reviewer | Task_4.3_Code_Review.md | src/ | [ ] |
 | 4.3.1 | Add missing type hints | python-pro | Task_4.3_Code_Review.md:L25-L26 | src/ | [ ] |
 | 4.3.2 | Add docstrings | technical-writer | Task_4.3_Code_Review.md:L28-L29 | src/ | [ ] |
@@ -143,11 +143,11 @@ This plan addresses these issues across 5 phases with 16 tasks and 50+ steps.
 | Phase 1: Core Fixes | 4 (+16 steps) | 20 | 0 | 0 |
 | Phase 2: Architecture | 3 (+18 steps) | 21 | 0 | 0 |
 | Phase 3: Training Pipeline | 3 (+17 steps) | 20 | 0 | 0 |
-| Phase 4: Validation | 4 (+24 steps) | 9 | 0 | 19 |
+| Phase 4: Validation | 4 (+24 steps) | 16 | 0 | 12 |
 | Round Tables | 5 | 4 | 0 | 1 |
 | Code Reviews | 3 | 3 | 0 | 0 |
 | Documentation Reviews | 1 | 0 | 0 | 1 |
-| **TOTAL** | **~100** | **80** | **0** | **~20** |
+| **TOTAL** | **~100** | **87** | **0** | **~13** |
 
 ---
 
