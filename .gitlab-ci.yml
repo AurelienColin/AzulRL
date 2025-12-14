@@ -1,0 +1,92 @@
+# GitLab CI/CD configuration for AzulRL
+#
+# This pipeline runs tests on every commit and provides coverage reports.
+# Stages: lint -> test -> coverage
+
+stages:
+  - lint
+  - test
+  - coverage
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+  PYTHONPATH: "$CI_PROJECT_DIR"
+
+# Cache pip packages for faster builds
+cache:
+  paths:
+    - .pip-cache/
+    - .venv/
+
+# Base Python job template
+.python_base:
+  image: python:3.11-slim
+  before_script:
+    - python -m venv .venv
+    - source .venv/bin/activate
+    - pip install --upgrade pip
+    - pip install pytest pytest-cov numpy tensorflow
+    # Install rignak utilities (required dependency)
+    - pip install -e /ssd/OneDrive/Mes_documents/Documents/python_scripts/rignak 2>/dev/null || echo "Rignak package not found, skipping"
+
+# Lint stage - basic syntax and import checks
+lint:
+  extends: .python_base
+  stage: lint
+  script:
+    - pip install flake8
+    - flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+    - flake8 src/ --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics
+  allow_failure: true  # Don't block on lint warnings
+
+# Test stage - run pytest
+test:
+  extends: .python_base
+  stage: test
+  script:
+    - pytest test/ -v --tb=short -ra
+  artifacts:
+    when: always
+    reports:
+      junit: test-results.xml
+    expire_in: 1 week
+
+# Test with coverage
+test_with_coverage:
+  extends: .python_base
+  stage: coverage
+  script:
+    - pip install pytest-cov
+    - pytest test/ --cov=src --cov-report=term-missing --cov-report=xml --cov-report=html
+  coverage: '/TOTAL.*\s+(\d+%)/'
+  artifacts:
+    when: always
+    paths:
+      - htmlcov/
+      - coverage.xml
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 1 week
+  allow_failure: true  # Coverage can fail without blocking
+
+# Fast test for merge requests
+test_fast:
+  extends: .python_base
+  stage: test
+  script:
+    - pytest test/ -v --tb=short --maxfail=3 -x
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Manual full test suite with coverage threshold
+test_full:
+  extends: .python_base
+  stage: test
+  script:
+    - pip install pytest-cov
+    - pytest test/ --cov=src --cov-report=term-missing --cov-fail-under=70
+  rules:
+    - when: manual
+  allow_failure: false
