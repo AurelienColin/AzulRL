@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import typing
 import numpy as np
 from src.obj.container import Container
-from rignak.src.lazy_property import LazyProperty
+from src.lazy_property import LazyProperty
 from src.config import config
 
 

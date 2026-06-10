@@ -7,7 +7,7 @@ from src.config import config
 from src.obj.player import Player
 from src.obj.plate import Plate
 from src.obj.bag import Bag
-from rignak.src.lazy_property import LazyProperty
+from src.lazy_property import LazyProperty
 from src.obj.container import Container
 from src.obj.central import Central
 

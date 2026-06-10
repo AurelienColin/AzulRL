@@ -10,6 +10,8 @@ import pytest
 import numpy as np
 from unittest.mock import patch, MagicMock
 
+pytest.importorskip("tensorflow")
+
 from src.obj.random_agent import RandomAgent
 from src.obj.greedy_agent import GreedyAgent
 from src.obj.game import Game

@@ -10,9 +10,9 @@ Tests cover:
 """
 import pytest
 import numpy as np
-import tensorflow as tf
 import sys
 import os
+tf = pytest.importorskip("tensorflow")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

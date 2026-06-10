@@ -18,7 +18,12 @@ from src.obj.container import Container
 from src.obj.central import Central
 from src.obj.player import Player, Left, Right, Penalties
 from src.obj.game import Game
-from src.obj.bot_player import BotPlayer
+try:
+    from src.obj.bot_player import BotPlayer
+    _HAS_TF = True
+except ImportError:
+    BotPlayer = None  # type: ignore[assignment,misc]
+    _HAS_TF = False
 from src.obj.replay_buffer import ReplayBuffer
 
 
@@ -168,7 +173,10 @@ def game_state(game: Game) -> np.ndarray:
 # =============================================================================
 
 @pytest.fixture
-def bot_player(game: Game) -> BotPlayer:
+def bot_player(game: Game) -> "BotPlayer":
+    if not _HAS_TF:
+        pytest.skip("tensorflow not available")
+    assert BotPlayer is not None
     """Create a bot player configured for a game."""
     bot = BotPlayer(
         index=0,
@@ -181,7 +189,9 @@ def bot_player(game: Game) -> BotPlayer:
 
 
 @pytest.fixture
-def bot_player_high_epsilon(game: Game) -> BotPlayer:
+def bot_player_high_epsilon(game: Game) -> "BotPlayer":
+    if not _HAS_TF:
+        pytest.skip("tensorflow not available")
     """Create a bot player with high exploration rate."""
     bot = BotPlayer(
         index=0,
@@ -195,7 +205,9 @@ def bot_player_high_epsilon(game: Game) -> BotPlayer:
 
 
 @pytest.fixture
-def bot_player_no_exploration(game: Game) -> BotPlayer:
+def bot_player_no_exploration(game: Game) -> "BotPlayer":
+    if not _HAS_TF:
+        pytest.skip("tensorflow not available")
     """Create a bot player with no exploration (greedy)."""
     bot = BotPlayer(
         index=0,

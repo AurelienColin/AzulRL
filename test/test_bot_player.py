@@ -9,7 +9,7 @@ Tests cover:
 """
 import pytest
 import numpy as np
-import tensorflow as tf
+tf = pytest.importorskip("tensorflow")
 
 from src.config import config
 from src.obj.bot_player import (

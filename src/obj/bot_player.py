@@ -9,8 +9,8 @@ from src.config import config
 from src.utils import normalize_state
 from functools import cache
 
-from rignak.src.lazy_property import LazyProperty
-from rignak.src.logging_utils import logger
+from src.lazy_property import LazyProperty
+from src.logging_utils import logger
 import os
 
 
